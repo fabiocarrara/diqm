@@ -28,9 +28,10 @@ def main(args):
                  optimizer='adam',)
                  # metrics=['binary_crossentropy', 'mse'])
 
-    reference_inputs = ['reference.png']
-    distorted_inputs = ['distorted.png']
-    pmaps_inputs = ['P_map.png']
+    # Development inputs
+    reference_inputs = ['devel-images/reference.png']
+    distorted_inputs = [' devel-images/distorted.png']
+    pmaps_inputs = [' devel-images/P_map.png']
     q_inputs = np.array([[38.56 / 100]])
 
     # reference = load_pipeline(reference_inputs)
