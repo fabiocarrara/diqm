@@ -30,8 +30,8 @@ def main(args):
 
     # Development inputs
     reference_inputs = ['devel-images/reference.png']
-    distorted_inputs = [' devel-images/distorted.png']
-    pmaps_inputs = [' devel-images/P_map.png']
+    distorted_inputs = ['devel-images/distorted.png']
+    pmaps_inputs = ['devel-images/P_map.png']
     q_inputs = np.array([[38.56 / 100]])
 
     # reference = load_pipeline(reference_inputs)

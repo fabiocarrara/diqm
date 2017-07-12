@@ -1,3 +1,8 @@
+#
+# Modification of code taken from:
+# https://github.com/zizhaozhang/unet-tensorflow-keras
+#
+
 from keras.models import Model
 from keras.layers import Input, MaxPooling2D, UpSampling2D, Cropping2D, ZeroPadding2D, merge, Dense, Flatten
 from keras.layers.convolutional import Conv2D
