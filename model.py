@@ -1,5 +1,5 @@
 #
-# Modification of code taken from:
+# Code for the model taken from:
 # https://github.com/zizhaozhang/unet-tensorflow-keras
 #
 
@@ -37,7 +37,7 @@ class UNet():
         concat_axis = 3
         references = Input(shape=img_shape)
         distorted = Input(shape=img_shape)
-        inputs = merge([references, distorted], mode='concat')
+        inputs = concatenate([references, distorted])
 
         conv1 = Conv2D(32, (3, 3), activation='relu', padding='same', name='conv1_1')(inputs)
         conv1 = Conv2D(32, (3, 3), activation='relu', padding='same')(conv1)
@@ -87,11 +87,11 @@ class UNet():
 
         ch, cw = self.get_crop_shape(inputs, conv9)
         conv9 = ZeroPadding2D(padding=((ch[0], ch[1]), (cw[0], cw[1])))(conv9)
-        conv10 = Conv2D(num_class, (1, 1), activation='sigmoid')(conv9)
+        conv10 = Conv2D(num_class, (1, 1), activation='sigmoid', name='pmap')(conv9)
 
         flat_conv5 = Flatten()(conv5)
         fc1 = Dense(256, activation='relu')(flat_conv5)
-        q = Dense(1, activation='sigmoid')(fc1)
+        q = Dense(1, activation='sigmoid', name='q')(fc1)
 
         model = Model(inputs=[references, distorted], outputs=[conv10, q])
 
