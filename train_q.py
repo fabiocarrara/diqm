@@ -10,16 +10,16 @@ np.random.seed(42)
 import tensorflow as tf
 tf.set_random_seed(342)
 
-from model import UNet
+from model import QNet
 from dataload import DataLoader
 from keras.callbacks import Callback, LambdaCallback, TerminateOnNaN, ModelCheckpoint, TensorBoard, ReduceLROnPlateau, CSVLogger
 
 
 def main(args):
-
+    
     # decide experiment label and base directory
-    exp_root_dir = 'runs/vdp'
-    log_root_dir = 'logs/vdp'
+    exp_root_dir = 'runs/q'
+    log_root_dir = 'logs/q'
     exp_label = args.label
     exp_dir = os.path.join(exp_root_dir, exp_label)
     i = 1
@@ -37,10 +37,10 @@ def main(args):
     os.makedirs(ckpt_dir)
     os.makedirs(log_dir)
 
-    model = UNet().create_model(img_shape=(512, 512, 3), num_class=1, architecture=args.arch)
-    model.compile(loss=['binary_crossentropy', 'mse'], optimizer='adam')
+    model = QNet().create_model(img_shape=(512, 512, 3), architecture=args.arch)
+    model.compile(loss='mse', optimizer='adam')
 
-    dataloader = DataLoader(args.data, random_state=42)
+    dataloader = DataLoader(args.data, random_state=42, load_vdp=False)
 
     callbacks = [
         TerminateOnNaN(),
@@ -64,7 +64,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='PMap and Q predictor?')
+    parser = argparse.ArgumentParser(description='Train Q predictor')
     parser.add_argument('data', default='data/', help='Directory containing image data')
     parser.add_argument('-a', '--arch', type=str, default='normal', help='The network architecture ([normal] | fixed_res | small)')
     parser.add_argument('-e', '--n_epochs', type=int, default=30, help='Number of training epochs')
