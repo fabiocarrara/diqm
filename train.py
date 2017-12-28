@@ -10,16 +10,17 @@ np.random.seed(42)
 import tensorflow as tf
 tf.set_random_seed(342)
 
-from model import UNet
-from dataload import DataLoader
+import models
+import dataloaders
+
 from keras.callbacks import Callback, LambdaCallback, TerminateOnNaN, ModelCheckpoint, TensorBoard, ReduceLROnPlateau, CSVLogger
 
 
 def main(args):
 
     # decide experiment label and base directory
-    exp_root_dir = 'runs/vdp'
-    log_root_dir = 'logs/vdp'
+    exp_root_dir = 'runs/{}'.format(args.metric)
+    log_root_dir = 'logs/{}'.format(args.metric)
     exp_label = args.label
     exp_dir = os.path.join(exp_root_dir, exp_label)
     i = 1
@@ -37,10 +38,16 @@ def main(args):
     os.makedirs(ckpt_dir)
     os.makedirs(log_dir)
 
-    model = UNet().create_model(img_shape=(512, 512, 3), num_class=1, architecture=args.arch)
-    model.compile(loss=['binary_crossentropy', 'mse'], optimizer='adam')
+    net = getattr(models, '{}Net'.format(args.metric.upper()))()
+    input_shape = (512, 512, 1) if args.metric == 'driim' else (512, 512, 3)
+    loss = net.get_losses()
 
-    dataloader = DataLoader(args.data, random_state=42)
+    model = net.create_model(img_shape=input_shape, architecture=args.arch)
+    model.compile(loss=loss, optimizer='adam')
+
+    dataloader = '{}DataLoader'.format(args.metric.upper())
+    dataloader = getattr(dataloaders, dataloader)
+    dataloader = dataloader(args.data, random_state=42)
 
     callbacks = [
         TerminateOnNaN(),
@@ -64,8 +71,9 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='PMap and Q predictor?')
-    parser.add_argument('data', default='data/', help='Directory containing image data')
+    parser = argparse.ArgumentParser(description='Train a Deep Image Metric Predictor.')
+    parser.add_argument('data', help='Directory containing image data')
+    parser.add_argument('metric', help='The metric to learn, one of (q, vdp, driim)')
     parser.add_argument('-a', '--arch', type=str, default='normal', help='The network architecture ([normal] | fixed_res | small)')
     parser.add_argument('-e', '--n_epochs', type=int, default=30, help='Number of training epochs')
     parser.add_argument('-b', '--batch_size', type=int, default=4, help='Number of training epochs')
