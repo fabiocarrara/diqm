@@ -19,8 +19,9 @@ from keras.callbacks import Callback, LambdaCallback, TerminateOnNaN, ModelCheck
 def main(args):
 
     # decide experiment label and base directory
-    exp_root_dir = 'runs/{}'.format(args.metric)
-    log_root_dir = 'logs/{}'.format(args.metric)
+    data_label = os.path.basename(os.path.normpath(args.data))
+    exp_root_dir = 'runs/{}'.format(data_label)
+    log_root_dir = 'logs/{}'.format(data_label)
     exp_label = args.label
     exp_dir = os.path.join(exp_root_dir, exp_label)
     i = 1
@@ -47,7 +48,19 @@ def main(args):
 
     dataloader = '{}DataLoader'.format(args.metric.upper())
     dataloader = getattr(dataloaders, dataloader)
-    dataloader = dataloader(args.data, random_state=42)
+    
+    dataloader_kwargs = dict(random_state=42)
+    # some dataset comes in groups of augmented samples,
+    # using 'group' we are not separating those samples between splits
+    if data_label == 'driim-tmo':
+        dataloader_kwargs['group'] = 7
+    elif data_label == 'driim-comp':
+        dataloader_kwargs['group'] = 77
+    elif data_label == 'vdp-comp':
+        dataloader_kwargs['group'] = 42
+        dataloader_kwargs['hdr'] = True
+    
+    dataloader = dataloader(args.data, **dataloader_kwargs)
 
     callbacks = [
         TerminateOnNaN(),

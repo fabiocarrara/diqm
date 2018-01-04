@@ -14,9 +14,12 @@ def _read_img2tensor(fname, grayscale=False):
     return x
 
 
-def _read_mat2tensor(fname):
-    x = loadmat(fname)['image'].astype(np.float32)
-    x = x.reshape((1,) + x.shape + (1,))
+def _read_mat2tensor(fname, log_range=True):
+    x = loadmat(fname, verify_compressed_data_integrity=False)['image'].astype(np.float32)
+    if log_range:
+        np.add(x, 10e-6, out=x)
+        np.log10(x, out=x)
+    x = x.reshape((1,) + x.shape)
     return x
     
 
@@ -37,17 +40,30 @@ class BaseDataLoader:
 
 class VDPDataLoader(BaseDataLoader):
 
-    def __init__(self, data_dir, random_state=42):
+    def __init__(self, data_dir, random_state=42, group=None, hdr=False):
         self.data_dir = data_dir
-        self.load_vdp = load_vdp
         self.refs_dir = os.path.join(data_dir, 'ref')
         self.dist_dir = os.path.join(data_dir, 'stim')
-        self.pmap_dir = os.path.join(data_dir, 'vdp')
+        self.vdp_dir = os.path.join(data_dir, 'vdp')
+        
+        self.load_image = _read_mat2tensor if hdr else _read_img2tensor
             
         self.data = pd.read_csv(os.path.join(data_dir, 'data.csv'))
-        self.train, valtest = train_test_split(self.data, test_size=0.2, random_state=random_state)
+        data = self.data
+        
+        # group augmented samples together in order not to split
+        # augmentations among different splits
+        if group:
+            data = [data[i:i + group] for i in xrange(0, len(data), group)]
+        
+        self.train, valtest = train_test_split(data, test_size=0.2, random_state=random_state)
         self.val, self.test = train_test_split(valtest, test_size=0.5, random_state=random_state)
-
+        
+        if group:
+            self.train = pd.concat(self.train)
+            self.val = pd.concat(self.val)
+            self.test = pd.concat(self.test)
+            
     def _data_gen(self, data, shuffle):
         while True:
             if shuffle:
@@ -55,33 +71,47 @@ class VDPDataLoader(BaseDataLoader):
             for index, sample in data.iterrows():
                 ref_fname = os.path.join(self.refs_dir, sample.Reference)
                 dist_fname = os.path.join(self.dist_dir, sample.Distorted)
-                ref = _read_img2tensor(ref_fname)
-                dist = _read_img2tensor(dist_fname)
-                pmap_fname = os.path.join(self.pmap_dir, str(sample.Map))
-                pmap = _read_img2tensor(pmap_fname, grayscale=True)
-                yield [ref, dist, pmap, sample.Q]
+                ref = self.load_image(ref_fname)
+                dist = self.load_image(dist_fname)
+                vdp_fname = os.path.join(self.vdp_dir, str(sample.Map))
+                vdp = _read_img2tensor(vdp_fname, grayscale=True)
+                yield [ref, dist, vdp, sample.Q]
 
     def _load_batch(self, data, batch_size, shuffle):
         c = self._data_gen(data, shuffle)
         while True:
-            refs, dists, pmaps, qs = zip(*map(next, [c,] * batch_size))
+            refs, dists, vdps, qs = zip(*map(next, [c,] * batch_size))
             refs = np.vstack(refs)
             dists = np.vstack(dists)
             qs = np.array(qs, dtype=np.float32).reshape(-1, 1) / 100.0
-            pmaps = np.vstack(pmaps)
-            yield [refs, dists], [pmaps, qs]
+            vdps = np.vstack(vdps)
+            yield [refs, dists], [vdps, qs]
 
 
 class QDataLoader(BaseDataLoader):
 
-    def __init__(self, data_dir, random_state=42):
+    def __init__(self, data_dir, random_state=42, group=None, hdr=False):
         self.data_dir = data_dir
         self.refs_dir = os.path.join(data_dir, 'ref')
         self.dist_dir = os.path.join(data_dir, 'stim')
+        
+        self.load_image = _read_mat2tensor if hdr else _read_img2tensor
             
         self.data = pd.read_csv(os.path.join(data_dir, 'data.csv'))
-        self.train, valtest = train_test_split(self.data, test_size=0.2, random_state=random_state)
+        data = self.data
+        
+        # group augmented samples together in order not to split
+        # augmentations among different splits
+        if group:
+            data = [data[i:i + group] for i in xrange(0, len(data), group)]
+        
+        self.train, valtest = train_test_split(data, test_size=0.2, random_state=random_state)
         self.val, self.test = train_test_split(valtest, test_size=0.5, random_state=random_state)
+        
+        if group:
+            self.train = pd.concat(self.train)
+            self.val = pd.concat(self.val)
+            self.test = pd.concat(self.test)
 
     def _data_gen(self, data, shuffle):
         while True:
@@ -90,8 +120,8 @@ class QDataLoader(BaseDataLoader):
             for index, sample in data.iterrows():
                 ref_fname = os.path.join(self.refs_dir, sample.Reference)
                 dist_fname = os.path.join(self.dist_dir, sample.Distorted)
-                ref = _read_img2tensor(ref_fname)
-                dist = _read_img2tensor(dist_fname)
+                ref = self.load_image(ref_fname)
+                dist = self.load_image(dist_fname)
                 yield [ref, dist, sample.Q]
 
     def _load_batch(self, data, batch_size, shuffle):
@@ -106,15 +136,27 @@ class QDataLoader(BaseDataLoader):
 
 class DRIIMDataLoader(BaseDataLoader):
 
-    def __init__(self, data_dir, random_state=42):
+    def __init__(self, data_dir, random_state=42, group=None):
         self.data_dir = data_dir
         self.refs_dir = os.path.join(data_dir, 'ref')
         self.dist_dir = os.path.join(data_dir, 'stim')
         self.driim_dir = os.path.join(data_dir, 'driim')
             
         self.data = pd.read_csv(os.path.join(data_dir, 'data.csv'))
-        self.train, valtest = train_test_split(self.data, test_size=0.2, random_state=random_state)
+        data = self.data
+        
+        # group augmented samples together in order not to split
+        # augmentations among different splits
+        if group:
+            data = [data[i:i + group] for i in xrange(0, len(data), group)]
+        
+        self.train, valtest = train_test_split(data, test_size=0.2, random_state=random_state)
         self.val, self.test = train_test_split(valtest, test_size=0.5, random_state=random_state)
+        
+        if group:
+            self.train = pd.concat(self.train)
+            self.val = pd.concat(self.val)
+            self.test = pd.concat(self.test)
 
     def _data_gen(self, data, shuffle):
         while True:
@@ -123,14 +165,16 @@ class DRIIMDataLoader(BaseDataLoader):
             for index, sample in data.iterrows():
                 ref_fname = os.path.join(self.refs_dir, sample.Reference)
                 ref = _read_mat2tensor(ref_fname)
+                ref = np.expand_dims(ref, axis=-1)
                 
                 dist_fname = os.path.join(self.dist_dir, sample.Distorted)
                 dist = _read_mat2tensor(dist_fname)
+                dist = np.expand_dims(dist, axis=-1)
                 
                 driim_fnames = (sample['{}_Map'.format(i)] for i in 'ALR')
                 driim_fnames = (os.path.join(self.driim_dir, i) for i in driim_fnames)
                 driim = [_read_img2tensor(i, grayscale=True) for i in driim_fnames]
-                driim = np.concatenate(driim, axis=3) # (1, 512, 512, 3)
+                driim = np.concatenate(driim, axis=-1) # (1, 512, 512, 3)
                 
                 p75 = sample[['{}_P75'.format(i) for i in 'ALR']].values.astype(np.float32) / 100.0
                 p95 = sample[['{}_P95'.format(i) for i in 'ALR']].values.astype(np.float32) / 100.0
@@ -146,15 +190,28 @@ class DRIIMDataLoader(BaseDataLoader):
             
             
 if __name__ == '__main__':
-    d = DRIIMDataLoader('data/driim/v1')
-    test_gen, _ = d.test_generator(batch_size=10)
-    for [refs, dists], [driims, p75s, p95s] in test_gen:
+    from tqdm import tqdm
+    """
+    d = VDPDataLoader('data/vdp-comp/', random_state=42, group=42, hdr=True)
+    data_gen, data_iter = d.train_generator(batch_size=4)
+    
+     for batch in tqdm(data_gen, total=data_iter):
+        [refs, dists], [vdps, qs] = batch
+        print refs.shape, refs.min(), refs.max()
+        print dists.shape, dists.min(), dists.max()
+        print vdps.shape, vdps.min(), vdps.max()
+        print qs.shape, qs.min(), qs.max()
+    	break
+    """
+    
+    d = DRIIMDataLoader('data/driim-comp/', random_state=42, group=42)
+    data_gen, data_iter = d.train_generator(batch_size=4)
+    for batch in tqdm(data_gen, total=data_iter):    	
+    	[refs, dists], [driims, p75s, p95s] = batch
         print refs.shape, refs.min(), refs.max()
         print dists.shape, dists.min(), dists.max()
         print driims.shape, driims.min(), driims.max()
         print p75s.shape, p75s.min(), p75s.max()
         print p95s.shape, p95s.min(), p95s.max()
-        break
-
-
+    	break
 

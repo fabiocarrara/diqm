@@ -141,6 +141,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--arch', type=str, default='normal', help='The network architecture ([normal] | fixed_res | small)')
 
     args = parser.parse_args()
+    data_label = os.path.basename(os.path.normpath(args.data))
     
     net = getattr(models, '{}Net'.format(args.metric.upper()))()
     input_shape = (512, 512, 1) if args.metric == 'driim' else (512, 512, 3)
@@ -149,7 +150,18 @@ if __name__ == '__main__':
 
     dataloader = '{}DataLoader'.format(args.metric.upper())
     dataloader = getattr(dataloaders, dataloader)
-    dataloader = dataloader(args.data, random_state=42)
+    
+    dataloader_kwargs = dict(random_state=42)
+    # some dataset comes in groups of augmented samples,
+    # using 'group' we are not separating those samples between splits
+    if data_label == 'driim-tmo':
+        dataloader_kwargs['group'] = 7
+    elif data_label == 'driim-comp':
+        dataloader_kwargs['group'] = 77
+    elif data_label == 'vdp-comp':
+        dataloader_kwargs['group'] = 42
+    
+    dataloader = dataloader(args.data, **dataloader_kwargs)
 
     eval_fn = globals()['eval_{}'.format(args.metric)]
     eval_fn(model, dataloader, args)
