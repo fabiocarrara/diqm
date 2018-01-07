@@ -34,6 +34,9 @@ def eval_vdp(model, dataloader, args):
 
     test_generator, test_iterations = dataloader.test_generator(batch_size=4)
     img_paths = dataloader.test['Distorted'].values
+
+    if not os.path.exists(args.out):
+        os.makedirs(args.out)
     
     i = 0
     test_generator = iter(test_generator)
@@ -160,6 +163,7 @@ if __name__ == '__main__':
         dataloader_kwargs['group'] = 77
     elif data_label == 'vdp-comp':
         dataloader_kwargs['group'] = 42
+        dataloader_kwargs['hdr'] = True
     
     dataloader = dataloader(args.data, **dataloader_kwargs)
 
