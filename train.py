@@ -1,4 +1,6 @@
 import os
+import re
+import glob
 import random
 import argparse
 
@@ -10,68 +12,82 @@ np.random.seed(42)
 import tensorflow as tf
 tf.set_random_seed(342)
 
-import models
-import dataloaders
+from models import get_model_for
+from dataloaders import get_dataloader
 
-from keras.callbacks import Callback, LambdaCallback, TerminateOnNaN, ModelCheckpoint, TensorBoard, ReduceLROnPlateau, CSVLogger
+from keras.models import load_model
+from keras.callbacks import TerminateOnNaN, ModelCheckpoint, TensorBoard, ReduceLROnPlateau, CSVLogger
 
 
 def main(args):
 
-    # decide experiment label and base directory
-    data_label = os.path.basename(os.path.normpath(args.data))
-    exp_root_dir = 'runs/{}'.format(data_label)
-    log_root_dir = 'logs/{}'.format(data_label)
-    exp_label = args.label
-    exp_dir = os.path.join(exp_root_dir, exp_label)
-    i = 1
-    while os.path.exists(exp_dir):
-        exp_label = '{}.{}'.format(args.label, i)
-        exp_dir = os.path.join(exp_root_dir, exp_label)
-        i += 1
+    # Initialize data loading pipeline
+    dataloader, img_shape = get_dataloader(args.data, args.metric)    
+    train_gen, train_iterations = dataloader.train_generator(batch_size=args.batch_size)
+    val_gen, val_iterations = dataloader.val_generator(batch_size=args.batch_size)
     
-    # create experiment dir and subdirs
-    print 'Experiment Directory:', exp_dir
-    ckpt_dir = os.path.join(exp_dir, 'ckpt')
-    log_dir = os.path.join(log_root_dir, exp_label)
-        
-    os.makedirs(exp_dir)
-    os.makedirs(ckpt_dir)
-    os.makedirs(log_dir)
-
-    net = getattr(models, '{}Net'.format(args.metric.upper()))()
-    input_shape = (512, 512, 1) if args.metric == 'driim' else (512, 512, 3)
+    # Load dataset-specific model and losses
+    net = get_model_for(args.metric)
     loss = net.get_losses()
-
-    model = net.create_model(img_shape=input_shape, architecture=args.arch)
-    model.compile(loss=loss, optimizer='adam')
-
-    dataloader = '{}DataLoader'.format(args.metric.upper())
-    dataloader = getattr(dataloaders, dataloader)
     
-    dataloader_kwargs = dict(random_state=42)
-    # some dataset comes in groups of augmented samples,
-    # using 'group' we are not separating those samples between splits
-    if data_label == 'driim-tmo':
-        dataloader_kwargs['group'] = 7
-    elif data_label == 'driim-comp':
-        dataloader_kwargs['group'] = 77
-    elif data_label == 'vdp-comp':
-        dataloader_kwargs['group'] = 42
-        dataloader_kwargs['hdr'] = True
-    
-    dataloader = dataloader(args.data, **dataloader_kwargs)
+    if args.resume:
+        assert os.path.exists(args.resume), 'Training dir for resuming not found: {}'.format(args.resume)
+        exp_dir = args.resume
+        log_dir = exp_dir.replace('runs/', 'logs/') # hack ugly AF
+        ckpt_dir = os.path.join(exp_dir, 'ckpt')
+        
+        # find last checkpoint
+        ckpt_files = glob.glob(os.path.join(ckpt_dir, '*.hdf5'))
+        last_checkpoint = ckpt_files[0]
+        initial_epoch = 0
+        for filename in ckpt_files:
+            s = re.findall("weights.(\d+)-*", filename)
+            epoch = int(s[0]) if s else -1
+            if epoch > initial_epoch:
+                initial_epoch = epoch
+                last_checkpoint = filename
+                
+        initial_epoch += 1
+  
+        # load existing model
+        print 'Resuming:', last_checkpoint
+        model = load_model(last_checkpoint)
+        
+    else:
+        # decide experiment label and base directory
+        data_label = os.path.basename(os.path.normpath(args.data))
+        exp_root_dir = 'runs/{}'.format(data_label)
+        log_root_dir = 'logs/{}'.format(data_label)
+        exp_label = args.label
+        exp_dir = os.path.join(exp_root_dir, exp_label)
+        i = 1
+        while os.path.exists(exp_dir):
+            exp_label = '{}.{}'.format(args.label, i)
+            exp_dir = os.path.join(exp_root_dir, exp_label)
+            i += 1
+        
+        # create experiment dir and subdirs
+        print 'Experiment Directory:', exp_dir
+        ckpt_dir = os.path.join(exp_dir, 'ckpt')
+        log_dir = os.path.join(log_root_dir, exp_label)
+            
+        os.makedirs(exp_dir)
+        os.makedirs(ckpt_dir)
+        os.makedirs(log_dir)
+        
+        # create a new model
+        model = net.create_model(img_shape=img_shape, architecture=args.arch)
+        initial_epoch = 0
 
     callbacks = [
         TerminateOnNaN(),
-        ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.001),
+        ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.0001),
         TensorBoard(log_dir=log_dir),
-        CSVLogger(os.path.join(exp_dir, 'training.log')),
+        CSVLogger(os.path.join(exp_dir, 'training.log'), append=True),
         ModelCheckpoint(os.path.join(ckpt_dir, 'weights.{epoch:02d}-{val_loss:.2f}.hdf5')),
     ]
     
-    train_gen, train_iterations = dataloader.train_generator(batch_size=args.batch_size)
-    val_gen, val_iterations = dataloader.val_generator(batch_size=args.batch_size)
+    model.compile(loss=loss, optimizer='adam')
 
     model.fit_generator(
         train_gen, # train generator
@@ -80,6 +96,7 @@ def main(args):
         validation_data=val_gen, # val_generator
         validation_steps=val_iterations, # val steps
         workers=1, # no of loading workers (> 1 does not work with generators)
+        initial_epoch=initial_epoch,
         callbacks=callbacks)
 
 
@@ -91,6 +108,7 @@ if __name__ == '__main__':
     parser.add_argument('-e', '--n_epochs', type=int, default=30, help='Number of training epochs')
     parser.add_argument('-b', '--batch_size', type=int, default=4, help='Number of training epochs')
     parser.add_argument('-l', '--label', type=str, default=None, help='Run label')
+    parser.add_argument('-r', '--resume', type=str, default=None, help='Run directory of the training to be resumed')
     
     args = parser.parse_args()
     
