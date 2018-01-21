@@ -2,7 +2,6 @@ import os
 import argparse
 import numpy as np
 
-from tqdm import tqdm
 from scipy.io import loadmat
 from keras.preprocessing.image import img_to_array, array_to_img, load_img
 
@@ -90,7 +89,7 @@ if __name__ == '__main__':
     print 'Loading weights:', args.weights
     model.load_weights(args.weights)
     
-    for dist_fname in tqdm(args.dist_images):
+    for dist_fname in args.dist_images:
         dist = load_image_fn(dist_fname)
         x = [ref, dist]
         y = model.predict(x)
