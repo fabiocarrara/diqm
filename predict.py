@@ -19,10 +19,10 @@ def _read_img2tensor(fname, grayscale=False):
 def _read_mat2tensor(fname, log_range=True):
     x = loadmat(fname, verify_compressed_data_integrity=False)['image'].astype(np.float32)
     if log_range: # perform log10(1 + image)
-        np.add(x, 10e-6, out=x)
-        np.log10(x, out=x)
-        # np.log1p(x, out=x) # base e
-        # np.divide(x, np.log(10), out=x) # back to base 10
+        # np.add(x, 10e-6, out=x)
+        # np.log10(x, out=x)
+        np.log1p(x, out=x) # base e
+        np.divide(x, np.log(10), out=x) # back to base 10
     x = x.reshape((1,) + x.shape)
     
     if x.ndim < 4:
