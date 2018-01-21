@@ -2,6 +2,7 @@
 # Code for the model taken from:
 # https://github.com/zizhaozhang/unet-tensorflow-keras
 #
+import os
 
 from keras.models import Model
 from keras.layers import Input, MaxPooling2D, UpSampling2D, Cropping2D, ZeroPadding2D, merge, Dense, Flatten, Conv2DTranspose, GlobalAveragePooling2D
@@ -211,7 +212,7 @@ class VDPNet(BaseNet):
         return pmap, q
         
     def get_losses(self):
-        return ['binary_crossentropy', 'mse']
+        return ['mse', 'mse']
 
 
 class DRIIMNet(BaseNet):
@@ -279,11 +280,30 @@ class DRIIMNet(BaseNet):
         return maps, p75, p95
 
     def get_losses(self):
-        return ['binary_crossentropy', 'mse', 'mse']
+        return ['mse', 'mse', 'mse']
 
+
+def get_model_for(metric):
+
+    models = dict(vdp=VDPNet,
+                  driim=DRIIMNet,
+                  q=QNet)
+    
+    net = models[metric]()
+    return net    
+
+
+def get_best_checkpoint(run_dir):
+    ckpt_dir = os.path.join(run_dir, 'ckpt')
+    training_log = os.path.join(run_dir, 'training.log')
+    training_log = pd.read_csv(training_log)
+    best_epoch = training_log.val_loss.idxmin()
+    weights_file = os.path.join(ckpt_dir, 'weights.{:02d}-*'.format(best_epoch))
+    return glob.glob(weights_file)[0]
+        
 
 if __name__ == '__main__':
-    net = DRIIMNet()
-    model = net.create_model(img_shape=(512, 512, 1))
+    net = get_model_for('q')
+    model = net.create_model(img_shape=(512, 512, 3))
 
     print model.summary()
