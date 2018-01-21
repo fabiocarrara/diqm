@@ -6,7 +6,7 @@ from tqdm import tqdm
 from scipy.io import loadmat
 from keras.preprocessing.image import img_to_array, array_to_img, load_img
 
-from models import get_model_for
+from models import get_model_for, get_best_checkpoint
 
 
 def _read_img2tensor(fname, grayscale=False):
@@ -62,12 +62,14 @@ if __name__ == '__main__':
     parser.add_argument('ref_image', help='Path to reference image')
     parser.add_argument('dist_images', nargs='+', help='Path to one or more distorted images')
     parser.add_argument('-r', '--run_dir', help='Path to run directory (best validation snapshot is selected)')
-    parser.add_argument('-w', '--weights', default='ckpt/weights.29-0.19.hdf5', help='Path to HDF5 weights file (ignored if specified with -r)')
+    parser.add_argument('-w', '--weights', help='Path to HDF5 weights file (ignored if specified with -r)')
     parser.add_argument('-o', '--out', default='.', help='Where to save predictions')
     parser.add_argument('-a', '--arch', type=str, default='normal', help='The network architecture ([normal] | fixed_res | small)')
 
     args = parser.parse_args()
-    
+    if not (args.run_dir or args.weights):
+        parser.error('No weights file provided, please specify at least one between -r and -w.')
+
     assert os.path.exists(args.ref_image), 'File not found: {}'.format(args.ref_image)
     for i in args.dist_images:
         assert os.path.exists(i), 'File not found: {}'.format(i)
