@@ -4,6 +4,9 @@
 #
 import os
 
+import pandas as pd
+import glob2 as glob
+
 from keras.models import Model
 from keras.layers import Input, MaxPooling2D, UpSampling2D, Cropping2D, ZeroPadding2D, merge, Dense, Flatten, Conv2DTranspose, GlobalAveragePooling2D
 from keras.layers.convolutional import Conv2D
@@ -145,72 +148,6 @@ class VDPNet(BaseNet):
         
         return pmap, q
         
-    @staticmethod    
-    def _small_architecture(inputs):
-        concat_axis = 3
-    
-        conv1 = Conv2D(32, (3, 3), activation='relu', padding='same', name='conv1_1')(inputs)
-        #conv1 = Conv2D(32, (3, 3), activation='relu', padding='same')(conv1)
-        #conv1 = Conv2D(64, (3, 3), activation='relu', padding='same')(conv1)
-        conv1 = Conv2D(64, (3, 3), activation='relu', padding='same')(conv1)
-        pool1 = MaxPooling2D(pool_size=(2, 2))(conv1) # 512 -> 256
-
-        conv2 = Conv2D(128, (3, 3), activation='relu', padding='same')(pool1)
-        #conv2 = Conv2D(128, (3, 3), activation='relu', padding='same')(conv2)
-        #conv2 = Conv2D(256, (3, 3), activation='relu', padding='same')(conv2)
-        conv2 = Conv2D(256, (3, 3), activation='relu', padding='same')(conv2)
-
-        up_conv2 = UpSampling2D(size=(2, 2))(conv2)
-        ch, cw = _get_crop_shape(conv1, up_conv2)
-        crop_conv1 = Cropping2D(cropping=(ch, cw))(conv1)
-        up3 = concatenate([up_conv2, crop_conv1], axis=concat_axis)
-        conv3 = Conv2D(128, (3, 3), activation='relu', padding='same')(up3)
-        #conv3 = Conv2D(128, (3, 3), activation='relu', padding='same')(conv3)
-        #conv3 = Conv2D(64, (3, 3), activation='relu', padding='same')(conv3)
-        conv3 = Conv2D(64, (3, 3), activation='relu', padding='same')(conv3)
-
-        ch, cw = _get_crop_shape(inputs, conv3)
-        conv3 = ZeroPadding2D(padding=((ch[0], ch[1]), (cw[0], cw[1])))(conv3)
-        pmap = Conv2D(1, (1, 1), activation='sigmoid', name='pmap')(conv3)
-
-        q_conv1 = Conv2D(32, (3, 3), strides=2, activation='relu', padding='same', name='q_conv1')(pmap)
-        q_conv2 = Conv2D(32, (3, 3), strides=2, activation='relu', padding='same', name='q_conv2')(q_conv1)
-        q_conv3 = Conv2D(32, (3, 3), strides=2, activation='relu', padding='same', name='q_conv3')(q_conv2)
-        q_conv4 = Conv2D(32, (3, 3), strides=2, activation='relu', padding='same', name='q_conv4')(q_conv3)
-        q_fmap = Conv2D(1, (1, 1), activation='relu', padding='same', name='q_fmap')(pmap)
-        q_flat = Flatten(name='q_flat')(q_fmap)
-        q = Dense(1, activation='sigmoid', name='q')(q_flat)
-        
-        return pmap, q
-    
-    @staticmethod
-    def _fixed_res_architecture(inputs):
-        concat_axis = 3
-        
-        def multisize_conv(in_layer, num, prefix):
-            n = num / 4
-            conv1x1 = Conv2D(n, (1, 1), activation='relu', padding='same', name=prefix + '_1x1')(in_layer)
-            conv3x3 = Conv2D(n, (3, 3), activation='relu', padding='same', name=prefix + '_3x3')(in_layer)
-            conv5x5 = Conv2D(n, (5, 5), activation='relu', padding='same', name=prefix + '_5x5')(in_layer)
-            conv7x7 = Conv2D(n, (7, 7), activation='relu', padding='same', name=prefix + '_7x7')(in_layer)
-            out_layer = concatenate([conv1x1, conv3x3, conv5x5, conv7x7], axis=concat_axis)
-            return out_layer
-            
-        multi1 = multisize_conv(inputs, 64, 'multi1')
-        multi2 = multisize_conv(multi1, 128, 'multi2')
-        multi3 = multisize_conv(multi2, 64, 'multi3')
-        pmap = Conv2D(1, (1, 1), activation='sigmoid', name='pmap')(multi3)
-        
-        q_conv1 = Conv2D(32, (3, 3), strides=2, activation='relu', padding='same', name='q_conv1')(pmap)
-        q_conv2 = Conv2D(32, (3, 3), strides=2, activation='relu', padding='same', name='q_conv2')(q_conv1)
-        q_conv3 = Conv2D(32, (3, 3), strides=2, activation='relu', padding='same', name='q_conv3')(q_conv2)
-        q_conv4 = Conv2D(32, (3, 3), strides=2, activation='relu', padding='same', name='q_conv4')(q_conv3)
-        q_fmap = Conv2D(1, (1, 1), activation='relu', padding='same', name='q_fmap')(pmap)
-        q_flat = Flatten(name='q_flat')(q_fmap)
-        q = Dense(1, activation='sigmoid', name='q')(q_flat)
-        
-        return pmap, q
-        
     def get_losses(self):
         return ['mse', 'mse']
 
@@ -284,7 +221,6 @@ class DRIIMNet(BaseNet):
 
 
 def get_model_for(metric):
-
     models = dict(vdp=VDPNet,
                   driim=DRIIMNet,
                   q=QNet)
@@ -303,7 +239,14 @@ def get_best_checkpoint(run_dir):
         
 
 if __name__ == '__main__':
-    net = get_model_for('q')
-    model = net.create_model(img_shape=(512, 512, 3))
+    # show best validation models for each run
+    for ckpt_dir in glob.iglob('runs/**/ckpt'):
+        run_dir = os.path.dirname(ckpt_dir)
+        print get_best_checkpoint(run_dir)
 
-    print model.summary()
+    # print network summary for each metric
+    for metric in ('q', 'vdp', 'driim'):
+        net = get_model_for(metric)
+        model = net.create_model(img_shape=(512, 512, 3))
+        print model.summary()
+        del model
