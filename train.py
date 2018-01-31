@@ -20,9 +20,8 @@ from keras.callbacks import TerminateOnNaN, ModelCheckpoint, TensorBoard, Reduce
 
 
 def main(args):
-
     # Initialize data loading pipeline
-    dataloader, img_shape = get_dataloader(args.data, args.metric)    
+    dataloader, img_shape = get_dataloader(args.data, args.metric)
     train_gen, train_iterations = dataloader.train_generator(batch_size=args.batch_size)
     val_gen, val_iterations = dataloader.val_generator(batch_size=args.batch_size)
     
@@ -33,7 +32,6 @@ def main(args):
     if args.resume:
         assert os.path.exists(args.resume), 'Training dir for resuming not found: {}'.format(args.resume)
         exp_dir = args.resume
-        log_dir = exp_dir.replace('runs/', 'logs/') # hack ugly AF
         ckpt_dir = os.path.join(exp_dir, 'ckpt')
         
         # find last checkpoint
@@ -57,7 +55,6 @@ def main(args):
         # decide experiment label and base directory
         data_label = os.path.basename(os.path.normpath(args.data))
         exp_root_dir = 'runs/{}'.format(data_label)
-        log_root_dir = 'logs/{}'.format(data_label)
         exp_label = args.label
         exp_dir = os.path.join(exp_root_dir, exp_label)
         i = 1
@@ -69,25 +66,22 @@ def main(args):
         # create experiment dir and subdirs
         print 'Experiment Directory:', exp_dir
         ckpt_dir = os.path.join(exp_dir, 'ckpt')
-        log_dir = os.path.join(log_root_dir, exp_label)
             
         os.makedirs(exp_dir)
         os.makedirs(ckpt_dir)
-        os.makedirs(log_dir)
         
         # create a new model
         model = net.create_model(img_shape=img_shape, architecture=args.arch)
+        model.compile(loss=loss, optimizer='adam')
         initial_epoch = 0
 
     callbacks = [
         TerminateOnNaN(),
-        ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.0001),
-        TensorBoard(log_dir=log_dir),
+        # ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.0001),
+        TensorBoard(log_dir=exp_dir),
         CSVLogger(os.path.join(exp_dir, 'training.log'), append=True),
-        ModelCheckpoint(os.path.join(ckpt_dir, 'weights.{epoch:02d}-{val_loss:.2f}.hdf5')),
+        ModelCheckpoint(os.path.join(ckpt_dir, 'weights.{epoch:02d}-{val_loss:.2f}.hdf5'), save_best_only=True),
     ]
-    
-    model.compile(loss=loss, optimizer='adam')
 
     model.fit_generator(
         train_gen, # train generator
