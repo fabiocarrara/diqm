@@ -8,38 +8,37 @@ import pandas as pd
 import glob2 as glob
 
 from keras.models import Model
-from keras.layers import Input, MaxPooling2D, UpSampling2D, Cropping2D, ZeroPadding2D, merge, Dense, Flatten, Conv2DTranspose, GlobalAveragePooling2D
+from keras.layers import Input, MaxPooling2D, UpSampling2D, Cropping2D, ZeroPadding2D, Dense, Flatten, \
+    GlobalAveragePooling2D
 from keras.layers.convolutional import Conv2D
 from keras.layers.merge import concatenate
 
 
-class BaseNet():
-            
+class BaseNet:
     def create_model(self, img_shape, architecture='normal'):
         print('Building {}: {}'.format(self.__class__.__name__, architecture))
-        
+
         references = Input(shape=img_shape)
         distorted = Input(shape=img_shape)
         inputs = concatenate([references, distorted])
-        
+
         # call a _{arch}_architecture methods
         outputs = getattr(self, '_{}_architecture'.format(architecture))(inputs)
 
         model = Model(inputs=(references, distorted), outputs=outputs)
 
         return model
-        
+
 
 class QNet(BaseNet):
-        
     @staticmethod
     def _normal_architecture(inputs):
         concat_axis = 3
-    
+
         conv1 = Conv2D(32, (3, 3), activation='relu', padding='same', name='conv1_1')(inputs)
         conv1 = Conv2D(32, (3, 3), activation='relu', padding='same')(conv1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
-        
+
         conv2 = Conv2D(64, (3, 3), activation='relu', padding='same')(pool1)
         conv2 = Conv2D(64, (3, 3), activation='relu', padding='same')(conv2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
@@ -54,11 +53,11 @@ class QNet(BaseNet):
 
         conv5 = Conv2D(512, (3, 3), activation='relu', padding='same')(pool4)
         conv5 = Conv2D(512, (3, 3), activation='relu', padding='same')(conv5)
-        
+
         avgpool = GlobalAveragePooling2D()(conv5)
         fc1 = Dense(256, activation='relu')(avgpool)
         q = Dense(1, activation='sigmoid', name='q')(fc1)
-        
+
         return q
 
     def get_losses(self):
@@ -86,15 +85,14 @@ def _get_crop_shape(target, refer):
 
 
 class VDPNet(BaseNet):
-    
     @staticmethod
     def _normal_architecture(inputs):
         concat_axis = 3
-    
+
         conv1 = Conv2D(32, (3, 3), activation='relu', padding='same', name='conv1_1')(inputs)
         conv1 = Conv2D(32, (3, 3), activation='relu', padding='same')(conv1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
-        
+
         conv2 = Conv2D(64, (3, 3), activation='relu', padding='same')(pool1)
         conv2 = Conv2D(64, (3, 3), activation='relu', padding='same')(conv2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
@@ -145,23 +143,22 @@ class VDPNet(BaseNet):
         flat_conv5 = Flatten()(conv5)
         fc1 = Dense(256, activation='relu')(flat_conv5)
         q = Dense(1, activation='sigmoid', name='q')(fc1)
-        
+
         return pmap, q
-        
+
     def get_losses(self):
         return ['mse', 'mse']
 
 
 class DRIIMNet(BaseNet):
-
     @staticmethod
     def _normal_architecture(inputs):
         concat_axis = 3
-    
+
         conv1 = Conv2D(32, (3, 3), activation='relu', padding='same', name='conv1_1')(inputs)
         conv1 = Conv2D(32, (3, 3), activation='relu', padding='same')(conv1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
-        
+
         conv2 = Conv2D(64, (3, 3), activation='relu', padding='same')(pool1)
         conv2 = Conv2D(64, (3, 3), activation='relu', padding='same')(conv2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
@@ -213,7 +210,7 @@ class DRIIMNet(BaseNet):
         fc1 = Dense(256, activation='relu')(flat_conv5)
         p75 = Dense(3, activation='sigmoid', name='p75')(fc1)
         p95 = Dense(3, activation='sigmoid', name='p95')(fc1)
-        
+
         return maps, p75, p95
 
     def get_losses(self):
@@ -224,9 +221,9 @@ def get_model_for(metric):
     models = dict(vdp=VDPNet,
                   driim=DRIIMNet,
                   q=QNet)
-    
+
     net = models[metric]()
-    return net    
+    return net
 
 
 def get_best_checkpoint(run_dir):
@@ -236,7 +233,7 @@ def get_best_checkpoint(run_dir):
     best_epoch = training_log.val_loss.idxmin()
     weights_file = os.path.join(ckpt_dir, 'weights.{:02d}-*'.format(best_epoch))
     return glob.glob(weights_file)[0]
-        
+
 
 if __name__ == '__main__':
     # show best validation models for each run
