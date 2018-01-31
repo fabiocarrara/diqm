@@ -4,7 +4,6 @@ import itertools
 
 import numpy as np
 import pandas as pd
-import glob2 as glob
 import matplotlib
 
 matplotlib.use('Agg')
@@ -26,6 +25,8 @@ def eval_vdp(model, dataloader, args):
     def visualize_and_save(out_prefix, sample_data, hdr=False):
         ref, dist, pmap, q, pred_pmap, pred_q = sample_data
         
+        mse = np.mean((pmap - pred_pmap)**2)
+        
         if hdr:
             # bring HDR back to [0,1] only for visualization purposes
             min_lum = min(ref.min(), dist.min())
@@ -44,6 +45,8 @@ def eval_vdp(model, dataloader, args):
         preview = array_to_img(preview)
         out_fname = '{}_Q_{:4.2f}_predQ_{:4.2f}.png'.format(out_prefix, 100 * q[0], 100 * pred_q[0])
         preview.save(out_fname)
+        
+        return mse
 
     test_generator, test_iterations = dataloader.test_generator(batch_size=4)
     img_paths = dataloader.test['Distorted'].values
@@ -52,6 +55,7 @@ def eval_vdp(model, dataloader, args):
         os.makedirs(args.out)
     
     i = 0
+    mses = []
     is_hdr = dataloader.hdr # whether the dataset has HDR inputs
     test_generator = iter(test_generator)
     for _ in trange(test_iterations):
@@ -61,12 +65,15 @@ def eval_vdp(model, dataloader, args):
         for sample_data in batch_data:
             # out_prefix example: /path/to/dir/img_2351_jpeg_30
             out_prefix = os.path.join(args.out, img_paths[i][:-4])
-            visualize_and_save(out_prefix, sample_data, is_hdr)
+            mse = visualize_and_save(out_prefix, sample_data, is_hdr)
+            mses.append(mse)
             i += 1
             # break at the end of samples (even in the middle of a batch)
             if i == len(img_paths):
+                dataloader.test['MSE'] = pd.Series(mses, index=dataloader.test.index)
+                csv_path = os.path.join(args.out, 'predictions.csv')
+                dataloader.test.to_csv(csv_path)
                 return
-
 
 def eval_q(model, dataloader, args):
     test_generator, test_iterations = dataloader.test_generator(batch_size=32)
@@ -113,6 +120,8 @@ def eval_driim(model, dataloader, args):
             ref /= max_lum
             dist /= max_lum
         
+        mse = np.mean((pred_driim - driim)**2, axis=(0,1))
+        
         # divide ALR maps
         driim = np.split(driim, 3, axis=2)
         pred_driim = np.split(pred_driim, 3, axis=2)
@@ -137,11 +146,14 @@ def eval_driim(model, dataloader, args):
         format_args = [out_prefix,] + list(probs)
         out_fname = out_format.format(*format_args)
         preview.save(out_fname)
+        
+        return mse
 
     test_generator, test_iterations = dataloader.test_generator(batch_size=4)
     img_paths = dataloader.test['Distorted'].values
     
     i = 0
+    mses = []
     is_hdr = dataloader.hdr # whether the dataset has HDR inputs
     test_generator = iter(test_generator)
     for _ in trange(test_iterations):
@@ -151,10 +163,15 @@ def eval_driim(model, dataloader, args):
         for sample_data in batch_data:
             # out_prefix example: /path/to/dir/img_2351_jpeg_30
             out_prefix = os.path.join(args.out, img_paths[i][:-4])
-            visualize_and_save(out_prefix, sample_data, hdr=is_hdr)
+            mse = visualize_and_save(out_prefix, sample_data, hdr=is_hdr)
+            mses.append(mse)
             i += 1
             # break at the end of samples (even in the middle of a batch)
             if i == len(img_paths):
+                mses = pd.DataFrame(mses, columns=['MSE_{}'.format(i) for i in 'ALR'], index=dataloader.test.index)
+                predictions = pd.concat((dataloader.test, mses), axis=1)
+                csv_path = os.path.join(args.out, 'predictions.csv')
+                predictions.to_csv(csv_path)
                 return
 
 
@@ -182,4 +199,3 @@ if __name__ == '__main__':
 
     eval_fn = globals()['eval_{}'.format(args.metric)]
     eval_fn(model, dataloader, args)
-    
