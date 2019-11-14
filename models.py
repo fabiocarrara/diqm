@@ -1,5 +1,5 @@
 #
-# Code for the model taken from:
+# Code for the model based on:
 # https://github.com/zizhaozhang/unet-tensorflow-keras
 #
 import os
