@@ -1,4 +1,4 @@
 glob2
-keras==2.0.5
+keras==2.13.1
 seaborn
 tqdm
